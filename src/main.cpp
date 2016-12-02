@@ -13,8 +13,9 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <nav_msgs/Odometry.h>
 #include <std_srvs/Trigger.h>
+#include <std_msgs/Float32MultiArray.h>
 
-
+#define PATH_SIZE 10
 
 mavros_msgs::State current_state;
 
@@ -38,15 +39,31 @@ void gps_cb(const nav_msgs::Odometry::ConstPtr& msg) {
 }
 
 
+int curr_path_size = 0;
 double r = 1.0;
 double theta;
-double count=0.0;
+int count=0;
+int path_idx = 0;
 double wn= 1.0;
+float path[PATH_SIZE][2];
 ros::ServiceClient landing_client;
+ros::Subscriber path_listener;
 bool land_detected = false;
 
 
+void path_cb(const std_msgs::Float32MultiArray::ConstPtr& msg) {
 
+       // float temp[2*PATH_SIZE];
+        //temp = msg->data;
+        curr_path_size = msg->data.size()/2;
+        if (!msg->data.empty()) {       
+                for(int i = 0; i < msg->data.size()/2; i++) {
+                        path[i][0] = msg->data.at(i);
+                        path[i][1] = msg->data.at(msg->data.size()/2+i);
+                 }
+              
+        }
+}
 
 
 bool land(mavros_msgs::CommandTOL::Request & req,
@@ -67,6 +84,8 @@ bool land(mavros_msgs::CommandTOL::Request & req,
 
 
 }
+
+
 bool customLand(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
      
@@ -99,6 +118,8 @@ int main(int argc, char **argv)
             ("mavros/cmd/arming");
      landing_client = nh.serviceClient<mavros_msgs::CommandTOL>
             ("mavros/cmd/land");
+     path_listener = nh.subscribe<std_msgs::Float32MultiArray>
+            ("mavros_custom_path",10, path_cb);
     ros::ServiceServer landing_listener = nh.advertiseService("mavros_custom_msgs",customLand);
     ros::ServiceClient set_mode_client = nh.serviceClient<mavros_msgs::SetMode>
             ("mavros/set_mode");
@@ -141,6 +162,11 @@ int main(int argc, char **argv)
 
     while(ros::ok()){
     
+    ROS_INFO("PATH size %d\n", curr_path_size);
+    for(int i = 0; i < curr_path_size; i++) {
+        ROS_INFO("x: %f, y: %f\n", path[i][0], path[i][1]);
+
+    }
         if( current_state.mode != "OFFBOARD" &&
             (ros::Time::now() - last_request > ros::Duration(5.0))){
             if( set_mode_client.call(offb_set_mode) &&
@@ -182,17 +208,26 @@ int main(int argc, char **argv)
         else {
  
         theta = wn*count*0.05;
-
+        if (curr_path_size ==0) {
         pose.pose.position.x = r*sin(theta);//+ home_location.pose.pose.position.x;
         pose.pose.position.y =  r*cos(theta); //home_location.pose.pose.position.y +;
         pose.pose.position.z = 1.5;
         count++;
+        }
+        
+        // Hover in circle, unless path is present
+        if (curr_path_size >=1 && path_idx < curr_path_size) {
+           
+                pose.pose.position.x = path[path_idx][0];
+                pose.pose.position.y = path[path_idx][1];  
+                pose.pose.position.z = 1.5;
+                path_idx++;
+        }
        
         
         local_pos_pub.publish(pose);
         ROS_INFO("Sending a POSE x: %f y: %f z: %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z);
-        ROS_INFO("GPS POSE x: %f y: %f z: %f\n", current_location.pose.pose.position.x, current_location.pose.pose.position.y, current_location.pose.pose.position.z); 
-      ROS_INFO("HOME POSE x: %f y: %f z: %f\n", home_location.pose.pose.position.x, home_location.pose.pose.position.y, home_location.pose.pose.position.z); 
+       
             ROS_INFO("LOCAL POSE x: %f y: %f z: %f\n", current_location.pose.pose.position.x -home_location.pose.pose.position.x, current_location.pose.pose.position.y - home_location.pose.pose.position.y, current_location.pose.pose.position.z); 
       
         }

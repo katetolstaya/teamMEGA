@@ -42,6 +42,7 @@
   <buildtool_depend>catkin</buildtool_depend>
   <buildtool_depend>mavros</buildtool_depend>
   <run_depend>mavros</run_depend>
+  <build_depend>ompl</build_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->
